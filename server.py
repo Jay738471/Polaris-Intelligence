@@ -227,12 +227,12 @@ Respond with ONLY valid JSON — no markdown, no text outside the JSON object:
                 'Content-Type': 'application/json',
             },
             json={
-                'model': 'llama-3.3-70b-versatile',
+                'model': 'llama-3.1-8b-instant',
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': 0.2,
                 'max_tokens': 1200,
             },
-            timeout=90,
+            timeout=45,
         )
 
         if not resp.ok:
@@ -352,4 +352,3 @@ if __name__ == '__main__':
     print('=' * 55)
     print()
     app.run(debug=False, host='0.0.0.0', port=port)
-
