@@ -1052,15 +1052,8 @@ function renderCalendar(events) {
 })();
 
 // ── Init ──────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', async () => {
-  try {
-    const res = await fetch('/api/config');
-    const cfg = await res.json();
-    if (cfg.hasNewsKey && cfg.hasGroqKey) { runAnalysis(); return; }
-  } catch(_) {}
-  cfgOpen=true; $('configPanel').classList.add('open');
-  setTimeout(()=>$('cfgNews').focus(),320);
-  loadCalendar();
+window.addEventListener('DOMContentLoaded', () => {
+  runAnalysis();
 });
 </script>
 </body>
