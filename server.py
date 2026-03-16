@@ -41,6 +41,10 @@ config: dict = load_config()
 _countries_cache = None
 
 
+@app.route('/favicon.png')
+def favicon():
+    return send_file('favicon.png', mimetype='image/png')
+
 @app.route('/')
 def index():
     return send_file('index.html')
@@ -151,23 +155,32 @@ def analyze():
         for a in articles[:45]
     )
 
-    prompt = f"""You are a professional futures market analyst specializing in ES1 (S&P 500 E-mini) and NQ1 (Nasdaq 100 E-mini). Analyze the news headlines below and produce a precise, objective directional bias for each instrument.
+    prompt = f"""You are a senior futures market analyst specializing in ES1 (S&P 500 E-mini) and NQ1 (Nasdaq 100 E-mini). Your job is to give a decisive, accurate directional bias — not to hedge. Markets are rarely truly neutral; find the dominant directional pressure in the news.
 
 STRICT SCORE-TO-BIAS MAPPING (follow exactly):
-  STRONG BEARISH : score -100 to -61  (systemic risk, crash panic, shock rate hike, severe recession fears)
-  BEARISH        : score  -60 to -21  (meaningful headwinds, risk-off tone, negative macro surprise, tariff escalation)
-  NEUTRAL        : score  -20 to +20  (mixed/conflicting signals, no clear edge — this is valid and common)
-  BULLISH        : score  +21 to +60  (positive catalysts, improving macro, risk-on tone, earnings beats)
-  STRONG BULLISH : score  +61 to +100 (exceptional tailwinds, major policy easing, blowout beats, relief rally)
+  STRONG BEARISH : score -100 to -61  (systemic risk, crash fears, severe recession signals, shock policy tightening)
+  BEARISH        : score  -60 to -26  (clear headwinds, risk-off tone, negative macro surprises, tariff escalation, growth fears)
+  NEUTRAL        : score  -25 to +25  (ONLY use when bullish and bearish forces are genuinely equal and offsetting — this should be rare)
+  BULLISH        : score  +26 to +60  (positive catalysts, risk-on tone, earnings beats, easing policy, strong macro data)
+  STRONG BULLISH : score  +61 to +100 (exceptional tailwinds, major policy easing, blowout beats, broad relief rally)
+
+CRITICAL SCORING RULES:
+  - NEUTRAL is a last resort, not a default. If the news leans even moderately in one direction, score it accordingly.
+  - Tariff escalation, trade war threats, recession fears, or Fed hawkishness = BEARISH at minimum (score below -25).
+  - Multiple negative macro signals stacking together = STRONG BEARISH territory.
+  - Uncertainty and "wait and see" headlines are bearish for near-term futures — markets hate uncertainty.
+  - A single positive headline does NOT offset multiple negative ones. Weigh the balance honestly.
+  - If the dominant theme across headlines is clearly negative (e.g. tariffs, recession, sell-off), do NOT return NEUTRAL.
 
 WEIGHTING GUIDE (highest impact first):
   1. Fed / central bank signals — rate cuts are bullish; hikes/hawkish surprises are strongly bearish
   2. Macro data surprises — CPI hot = bearish; NFP miss = bearish; GDP beat = bullish
   3. Trade war / tariff escalation — bearish; de-escalation = bullish
-  4. Geopolitical conflict escalation — risk-off, bearish
-  5. Tech sector (AI, semis, big-tech earnings) — HIGH weight for NQ1, moderate for ES1
-  6. Corporate earnings beats/misses — moderate weight
-  7. General political news without direct market impact — low weight
+  4. Recession fears / growth outlook downgrades — strongly bearish
+  5. Geopolitical conflict escalation — risk-off, bearish
+  6. Tech sector (AI, semis, big-tech earnings) — HIGH weight for NQ1, moderate for ES1
+  7. Corporate earnings beats/misses — moderate weight
+  8. General political noise without direct market impact — low weight
 
 NQ1 vs ES1 DIFFERENTIATION RULES:
   - NQ1 is 2-3x more sensitive to rate expectations than ES1 — if rates/Fed dominate, NQ1 score diverges more negative
@@ -176,10 +189,9 @@ NQ1 vs ES1 DIFFERENTIATION RULES:
   - Do NOT give ES1 and NQ1 identical scores unless news is truly undifferentiated
 
 OBJECTIVITY RULES:
-  - Do NOT default to bullish. If news is ambiguous or mixed, use NEUTRAL.
-  - Risk/uncertainty events (unknown outcome) are mildly bearish for near-term positioning.
-  - Base the score ONLY on the specific news provided — do not assume market conditions.
-  - Confidence (0-100) = how clearly the news supports your directional call. Low confidence = near-neutral score.
+  - Base the score ONLY on the specific news provided.
+  - Confidence (0-100) = how clearly and consistently the news supports your directional call.
+  - Be decisive. A well-reasoned directional call with 60% confidence is more useful than a lazy NEUTRAL.
 
 NEWS HEADLINES TO ANALYZE:
 {headlines_text}
@@ -215,12 +227,12 @@ Respond with ONLY valid JSON — no markdown, no text outside the JSON object:
                 'Content-Type': 'application/json',
             },
             json={
-                'model': 'llama-3.1-8b-instant',
+                'model': 'llama-3.3-70b-versatile',
                 'messages': [{'role': 'user', 'content': prompt}],
-                'temperature': 0.15,
-                'max_tokens': 1000,
+                'temperature': 0.2,
+                'max_tokens': 1200,
             },
-            timeout=45,
+            timeout=90,
         )
 
         if not resp.ok:
@@ -252,7 +264,7 @@ Respond with ONLY valid JSON — no markdown, no text outside the JSON object:
         return jsonify({'error': str(e)}), 500
 
 
-CACHE_TTL_HOURS = 1  # re-fetch at most once per hour
+CACHE_TTL_HOURS = 4  # re-fetch at most once every 4 hours
 
 def _active_feed():
     """Return 'nextweek' on Saturday >= 01:00 and all day Sunday, else 'thisweek'."""
@@ -314,6 +326,8 @@ def get_calendar():
     except requests.exceptions.HTTPError as e:
         if cached is not None:
             return jsonify(cached)
+        if e.response.status_code == 429:
+            return jsonify({'error': 'Calendar temporarily unavailable (rate limited). Check back shortly.'})
         return jsonify({'error': f'Calendar source returned HTTP {e.response.status_code}.'})
     except Exception as e:
         if cached is not None:
@@ -338,3 +352,4 @@ if __name__ == '__main__':
     print('=' * 55)
     print()
     app.run(debug=False, host='0.0.0.0', port=port)
+
